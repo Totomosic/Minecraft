@@ -18,11 +18,18 @@ namespace Minecraft
 					ChunkNeighbours neighbours = e.Data.Dimesion.GetChunkNeighbours(e.Data.Position);
 					float x = e.Data.Position.x * WorldChunk::CHUNK_SIZE;
 					float z = e.Data.Position.y * WorldChunk::CHUNK_SIZE;
-					CreateMeshFromFaces(e.Data.Chunk.GetVisibleFaces({}, neighbours)).ContinueWithOnMainThread([this, x, z, position](Mesh mesh)
+					CreateMeshFromFaces(e.Data.Chunk.GetVisibleFaces({}, neighbours)).ContinueWithOnMainThread([this, x, z, position](std::pair<Mesh, ModelMapping> mesh)
 						{
-							EntityHandle entity = m_Layer->GetFactory().CreateMesh(std::move(mesh), Transform({ x, 0, z }));
-							m_Entities[position] = entity;
+							{
+								ModelMapping temp{ std::move(mesh.second) };
+							}
+							if (m_Entities.find(position) != m_Entities.end() && !m_Entities[position])
+							{
+								EntityHandle entity = m_Layer->GetFactory().CreateMesh(std::move(mesh.first), Transform({ x, 0, z }));
+								m_Entities[position] = entity;
+							}
 						});
+					m_Entities[position];
 					UpdateChunk({ position.x - 1, position.y }, neighbours.nx);
 					UpdateChunk({ position.x + 1, position.y }, neighbours.px);
 					UpdateChunk({ position.x, position.y - 1 }, neighbours.nz);
@@ -33,7 +40,11 @@ namespace Minecraft
 			{
 				if (&e.Data.Dimension == m_TargetWorld && m_Entities.find(e.Data.Position) != m_Entities.end())
 				{
-					m_Entities[e.Data.Position].Destroy();
+					EntityHandle entity = m_Entities[e.Data.Position];
+					if (entity)
+					{
+						entity.Destroy();
+					}
 					m_Entities.erase(e.Data.Position);
 				}
 			});
@@ -43,7 +54,7 @@ namespace Minecraft
 			});
 	}
 
-	Task<Mesh> WorldRenderer::CreateMeshFromFaces(std::vector<BlockFace> faces) const
+	Task<std::pair<Mesh, ModelMapping>> WorldRenderer::CreateMeshFromFaces(std::vector<BlockFace> faces) const
 	{
 		Mesh m;
 		m.Materials.push_back(ResourceManager::Get().Materials().Texture(BlockDatabase::GetBlockFaces()));
@@ -54,8 +65,10 @@ namespace Minecraft
 		BufferLayout layout = BufferLayout::Default();
 		data.Vertices->CreateVertexBuffer(4 * faces.size() * layout.Size(), layout);
 
+		ModelMapping mapping = data.Map();
+			
+		return TaskManager::Get().Run(make_shared_function([mesh{ std::move(m) }, mapping{ std::move(mapping) }, faces{ std::move(faces) }, data{ std::move(data) }]() mutable
 		{
-			ModelMapping mapping = data.Map();
 			const VertexMapping& vMapping = mapping.VertexMap;
 			const IndexMapping& iMapping = mapping.IndexMap;
 			Vector4<byte> color = Color::White.ToBytes();
@@ -97,13 +110,9 @@ namespace Minecraft
 				*indices = (uint32_t)i * 4 + 3;
 				indices++;
 			}
-		}
-
-		m.Models.push_back({ ResourcePtr<Model>(new Model(std::move(data)), true), Matrix4f::Identity(), { 0 } });
-		return TaskManager::Get().Run([mesh{ std::move(m) }]()
-			{
-				return mesh;
-			});
+			mesh.Models.push_back({ ResourcePtr<Model>(new Model(std::move(data)), true), Matrix4f::Identity(), { 0 } });
+			return std::pair<Mesh, ModelMapping>{ mesh, std::move(mapping) };
+		}));
 	}
 
 	void WorldRenderer::UpdateChunk(const ChunkPos_t& position, const WorldChunk* chunk)
@@ -112,10 +121,19 @@ namespace Minecraft
 		{
 			if (m_Entities.find(position) != m_Entities.end())
 			{
-				CreateMeshFromFaces(chunk->GetVisibleFaces({}, m_TargetWorld->GetChunkNeighbours(position))).ContinueWithOnMainThread([this, position](Mesh mesh)
+				CreateMeshFromFaces(chunk->GetVisibleFaces({}, m_TargetWorld->GetChunkNeighbours(position))).ContinueWithOnMainThread([this, position](std::pair<Mesh, ModelMapping> mesh)
 					{
-						EntityHandle entity = m_Entities[position];
-						entity.Assign<Mesh>(std::move(mesh));
+						{
+							ModelMapping temp{ std::move(mesh.second) };
+						}
+						if (m_Entities.find(position) != m_Entities.end())
+						{
+							EntityHandle entity = m_Entities[position];
+							if (entity)
+							{
+								entity.Assign<Mesh>(std::move(mesh.first));
+							}
+						}
 					});
 			}
 		}

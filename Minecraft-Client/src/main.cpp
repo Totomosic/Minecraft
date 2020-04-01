@@ -1,6 +1,7 @@
 #include "mcpch.h"
 #include "World/WorldRenderer.h"
 #include "World/Generators/FlatWorldGenerator.h"
+#include "World/Generators/SimplexNoiseGenerator.h"
 #include "Blocks/BlockDatabase.h"
 #include "Textures/TextureAtlas.h"
 
@@ -10,7 +11,7 @@ namespace Minecraft
 	class MinecraftClient : public Application
 	{
 	public:
-		Vector2f m_MouseSensitivity = { 0.005f, 0.005f };
+		Vector2f m_MouseSensitivity = { 0.5f, 0.5f };
 		EntityHandle m_Player;
 
 		World m_World;
@@ -20,6 +21,7 @@ namespace Minecraft
 	public:
 		void Init() override
 		{
+			GetWindow().SetClearColor(Color::CornflowerBlue);
 			Scene& scene = SceneManager::Get().AddScene();
 			Layer& mainLayer = scene.AddLayer();
 			
@@ -27,15 +29,15 @@ namespace Minecraft
 			mainLayer.SetActiveCamera(camera);
 
 			EntityFactory factory = mainLayer.GetFactory();
-			m_Player = factory.Cuboid(1, 2, 1, Color::Red, Transform({ 0, 10, 0 }));
+			m_Player = factory.Cuboid(1, 2, 1, Color::Red, Transform({ 0, 65, 0 }));
 			camera.GetTransform()->SetParent(m_Player.GetTransform().Get());
 
-			factory.Cuboid(1, 1, 1, Color::Red, Transform({ 0, 10, -10 }));
-
-			m_World = World(std::make_unique<FlatWorldGenerator>());
+			m_World = World(std::make_unique<SimplexNoiseGenerator>(55, 70));
 			m_WorldRenderer = new WorldRenderer(&m_World, &mainLayer);
 
-			m_LastChunk = { 0, 0 };
+			m_LastChunk = { 10000000, 10000000 };
+
+			TaskManager::Get().GetThreadPool().Resize(std::max(std::thread::hardware_concurrency() - 1, 1U));
 
 			ResourceManager::Get().LoadPack("res/resources.pack", [this](const ResourcePack& pack)
 				{
@@ -74,8 +76,6 @@ namespace Minecraft
 					BlockDatabase::Register(stone);
 
 					BlockDatabase::SetBlockFaces(blockFacesTexture);
-
-					m_World.LoadChunk({ 0, 0 });
 				});
 
 			Input::Get().HideCursor();
@@ -83,7 +83,7 @@ namespace Minecraft
 
 		void Update() override
 		{
-			int chunkRadius = 3;
+			int chunkRadius = 1;
 
 			ComponentHandle t = m_Player.GetTransform();
 			float speed = 10 * Time::Get().RenderingTimeline().DeltaTime();
@@ -104,8 +104,8 @@ namespace Minecraft
 				t->Translate(t->Right() * -speed);
 			}
 			Vector3f relMouse = Input::Get().RelMousePosition();
-			t->Rotate(-relMouse.x * m_MouseSensitivity.x, Vector3f::Up(), Space::World);
-			t->Rotate(relMouse.y * m_MouseSensitivity.y, Vector3f::Right(), Space::Local);
+			t->Rotate(-relMouse.x * m_MouseSensitivity.x * Time::Get().RenderingTimeline().DeltaTime(), Vector3f::Up(), Space::World);
+			t->Rotate(relMouse.y * m_MouseSensitivity.y * Time::Get().RenderingTimeline().DeltaTime(), Vector3f::Right(), Space::Local);
 
 			ChunkPos_t chunk = m_World.GetChunkFromBlock((BlockPos_t)t->Position());
 			if (chunk != m_LastChunk)
