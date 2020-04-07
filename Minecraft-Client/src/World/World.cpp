@@ -80,6 +80,11 @@ namespace Minecraft
 		EventManager::Get().Bus().Emit(ChunkUpdated{ *this, index.Chunk, (const WorldChunk&)chunk });
 	}
 
+	BlockPos_t World::GetBlockFromWorld(const Vector3f& worldPosition) const
+	{
+		return BlockPos_t{ (dimension_t)floor(worldPosition.x), (dimension_t)floor(worldPosition.y), (dimension_t)floor(worldPosition.z) };
+	}
+
 	ChunkPos_t World::GetChunkFromBlock(const BlockPos_t& position) const
 	{
 		return GetBlockIndex(position).Chunk;
@@ -91,14 +96,8 @@ namespace Minecraft
 
 		double x = position.x / (double)WorldChunk::CHUNK_SIZE;
 		double z = position.z / (double)WorldChunk::CHUNK_SIZE;
-		if (x < 0.0)
-			result.Chunk.x = (int)(x - 1);
-		else
-			result.Chunk.x = (int)x;
-		if (z < 0.0)
-			result.Chunk.y = (int)(z - 1);
-		else
-			result.Chunk.y = (int)z;
+		result.Chunk.x = (int)floor(x);
+		result.Chunk.y = (int)floor(z);
 		result.Offset.x = position.x - result.Chunk.x * WorldChunk::CHUNK_SIZE;
 		result.Offset.y = position.y;
 		result.Offset.z = position.z - result.Chunk.y * WorldChunk::CHUNK_SIZE;

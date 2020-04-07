@@ -34,6 +34,7 @@ namespace Minecraft
 		BlockId GetBlock(const BlockPos_t& position) const;
 		void SetBlock(const BlockPos_t& position, BlockId block);
 
+		BlockPos_t GetBlockFromWorld(const Vector3f& worldPosition) const;
 		ChunkPos_t GetChunkFromBlock(const BlockPos_t& position) const;
 
 	private:

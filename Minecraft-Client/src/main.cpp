@@ -5,18 +5,30 @@
 #include "Blocks/BlockDatabase.h"
 #include "Textures/TextureAtlas.h"
 
+#include "Systems/MovementSystem.h"
+#include "Systems/CMovement.h"
+#include "Systems/CDimensions.h"
+
 namespace Minecraft
 {
 
 	class MinecraftClient : public Application
 	{
 	public:
-		Vector2f m_MouseSensitivity = { 0.5f, 0.5f };
+		static constexpr int RENDER_DISTANCE = 1;
+		static constexpr float PLAYER_SPEED = 5;
+
+	public:
+		Vector2f m_MouseSensitivity = { 0.8f, 0.8f };
+		EntityHandle m_Camera;
 		EntityHandle m_Player;
+		Vector3f m_PlayerSize = { 0.75f, 1.8f, 0.75f };
 
 		World m_World;
 		WorldRenderer* m_WorldRenderer;
 		ChunkPos_t m_LastChunk;
+
+		UIText* m_PositionText;
 
 	public:
 		void Init() override
@@ -24,21 +36,30 @@ namespace Minecraft
 			GetWindow().SetClearColor(Color::CornflowerBlue);
 			Scene& scene = SceneManager::Get().AddScene();
 			Layer& mainLayer = scene.AddLayer();
+			Layer& uiLayer = scene.AddLayer();
+			EntityHandle uiCamera = scene.GetFactory().Camera(Matrix4f::Orthographic(0, 1280, 0, 720, -100, 100));
+			uiLayer.SetActiveCamera(uiCamera);
 			
-			EntityHandle camera = scene.GetFactory().Camera(Matrix4f::Perspective(PI / 3.0f, GetWindow().Aspect(), 0.1f, 1000.0f));
-			mainLayer.SetActiveCamera(camera);
+			m_Camera = scene.GetFactory().Camera(Matrix4f::Perspective(PI / 3.0f, GetWindow().Aspect(), 0.1f, 1000.0f));
+			mainLayer.SetActiveCamera(m_Camera);
 
 			EntityFactory factory = mainLayer.GetFactory();
-			m_Player = factory.Cuboid(1, 2, 1, Color::Red, Transform({ 0, 65, 0 }));
-			camera.GetTransform()->SetParent(m_Player.GetTransform().Get());
+			m_Player = factory.Cuboid(m_PlayerSize.x, m_PlayerSize.y, m_PlayerSize.z, Color::Red, Transform({ 0, 65, 0 }));
+			m_Player.GetComponent<Mesh>()->Models[0].Transform = Matrix4f::Translation({ 0, m_PlayerSize.y / 2.0f, 0 }) * m_Player.GetComponent<Mesh>()->Models[0].Transform;
+			m_Camera.GetTransform()->SetParent(m_Player.GetTransform().Get());
+			m_Camera.GetTransform()->SetLocalPosition({ 0, m_PlayerSize.y - 0.2f, 0 });
+			m_Player.Assign<CDimensions>(CDimensions{ m_PlayerSize });
+			m_Player.Assign<CMovement>();
 
 			m_World = World(std::make_unique<SimplexNoiseGenerator>(55, 70));
 			m_WorldRenderer = new WorldRenderer(&m_World, &mainLayer);
+			mainLayer.Systems().Add<MovementSystem>(&m_World);
 
-			m_LastChunk = { 10000000, 10000000 };
+			m_PositionText = &uiLayer.GetUI().GetRoot().CreateText("", ResourceManager::Get().Fonts().Arial(20), Color::Black, Transform({ 5, 720 - 5, 0 }), AlignH::Left, AlignV::Top);
+			UIRectangle& crosshairX = uiLayer.GetUI().GetRoot().CreateRectangle(20, 2, Color::White, Transform({ 1280 / 2, 720 / 2, 0 }));
+			UIRectangle& crosshairZ = uiLayer.GetUI().GetRoot().CreateRectangle(2, 20, Color::White, Transform({ 1280 / 2, 720 / 2, 0 }));
 
-			TaskManager::Get().GetThreadPool().Resize(std::max(std::thread::hardware_concurrency() - 1, 1U));
-
+			m_LastChunk = { INT_MAX, INT_MAX };
 			ResourceManager::Get().LoadPack("res/resources.pack", [this](const ResourcePack& pack)
 				{
 					ResourceExtractor resources(pack);
@@ -83,49 +104,73 @@ namespace Minecraft
 
 		void Update() override
 		{
-			int chunkRadius = 1;
+			ComponentHandle t = m_Camera.GetTransform();
+			ComponentHandle movement = m_Player.GetComponent<CMovement>();
 
-			ComponentHandle t = m_Player.GetTransform();
-			float speed = 10 * Time::Get().RenderingTimeline().DeltaTime();
+			m_PositionText->SetText("x: " + std::to_string(t->Position().x) + " y: " + std::to_string(t->Position().y) + " z: " + std::to_string(t->Position().z));
+
+			Vector3f forward = t->Forward();
+			forward.y = 0;
+			forward = forward.Normalize();
+			Vector3f right = t->Right();
+			right.y = 0;
+			right = right.Normalize();
+
+			movement->Velocity.xz() = Vector2f{ 0, 0 };
+			movement->Acceleration = { 0, -30, 0 };
+
+			bool set = false;
 			if (Input::Get().KeyDown(Keycode::W))
 			{
-				t->Translate(t->Forward() * speed);
+				movement->Velocity += forward;
+				set = true;
 			}
-			else if (Input::Get().KeyDown(Keycode::S))
+			if (Input::Get().KeyDown(Keycode::S))
 			{
-				t->Translate(t->Forward() * -speed);
+				movement->Velocity += -forward;
+				set = true;
 			}
-			else if (Input::Get().KeyDown(Keycode::D))
+			if (Input::Get().KeyDown(Keycode::D))
 			{
-				t->Translate(t->Right() * speed);
+				movement->Velocity += right;
+				set = true;
 			}
-			else if (Input::Get().KeyDown(Keycode::A))
+			if (Input::Get().KeyDown(Keycode::A))
 			{
-				t->Translate(t->Right() * -speed);
+				movement->Velocity += -right;
+				set = true;
 			}
+			if (set)
+			{
+				movement->Velocity.xz() = movement->Velocity.xz().Normalize() * PLAYER_SPEED;
+			}
+
+			if (Input::Get().KeyPressed(Keycode::Space) && abs(movement->Velocity.y) < 1e-6)
+			{
+				movement->Velocity.y = 10;
+			}
+
 			Vector3f relMouse = Input::Get().RelMousePosition();
 			t->Rotate(-relMouse.x * m_MouseSensitivity.x * Time::Get().RenderingTimeline().DeltaTime(), Vector3f::Up(), Space::World);
 			t->Rotate(relMouse.y * m_MouseSensitivity.y * Time::Get().RenderingTimeline().DeltaTime(), Vector3f::Right(), Space::Local);
 
+			// Load chunks
 			ChunkPos_t chunk = m_World.GetChunkFromBlock((BlockPos_t)t->Position());
 			if (chunk != m_LastChunk)
 			{
 				std::vector<ChunkPos_t> shouldBeLoaded;
-				shouldBeLoaded.reserve((1 + 2 * (size_t)chunkRadius) * (1 + 2 * (size_t)chunkRadius));
-				for (int i = -chunkRadius; i <= chunkRadius; i++)
-					for (int j = -chunkRadius; j <= chunkRadius; j++)
+				shouldBeLoaded.reserve((1 + 2 * (size_t)RENDER_DISTANCE) * (1 + 2 * (size_t)RENDER_DISTANCE));
+				for (int i = -RENDER_DISTANCE; i <= RENDER_DISTANCE; i++)
+					for (int j = -RENDER_DISTANCE; j <= RENDER_DISTANCE; j++)
 						shouldBeLoaded.push_back({ chunk.x + i, chunk.y + j });
+
 				for (ChunkPos_t c : m_World.GetLoadedChunks())
-				{
 					if (std::find(shouldBeLoaded.begin(), shouldBeLoaded.end(), c) == shouldBeLoaded.end())
-					{
 						m_World.UnloadChunk(c);
-					}
-				}
+
 				for (ChunkPos_t c : shouldBeLoaded)
-				{
 					m_World.LoadChunk(c);
-				}
+
 				m_LastChunk = chunk;
 			}
 		}
