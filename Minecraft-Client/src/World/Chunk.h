@@ -34,7 +34,7 @@ namespace Minecraft
 		void SetBlock(const BlockPos_t& position, BlockId block);
 		void SetLevel(dimension_t y, BlockId block);
 
-		std::vector<BlockFace> GetVisibleFaces(const BlockPos_t& referencePosition, const ChunkNeighbours& neighbours) const;
+		std::vector<BlockRenderableFace> GetVisibleFaces(const BlockPos_t& referencePosition, const ChunkNeighbours& neighbours) const;
 
 	private:
 		bool IsValidPosition(const BlockPos_t& position) const;

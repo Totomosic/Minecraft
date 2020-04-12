@@ -9,7 +9,7 @@ namespace Minecraft
 	struct ChunkLoaded
 	{
 	public:
-		const World& Dimesion;
+		const World& Dimension;
 		ChunkPos_t Position;
 		const WorldChunk& Chunk;
 	};
@@ -24,9 +24,10 @@ namespace Minecraft
 	struct ChunkUpdated
 	{
 	public:
-		const World& Dimesion;
+		const World& Dimension;
 		ChunkPos_t Position;
 		const WorldChunk& Chunk;
+		std::vector<std::pair<ChunkPos_t, const WorldChunk*>> Neighbours;
 	};
 
 }

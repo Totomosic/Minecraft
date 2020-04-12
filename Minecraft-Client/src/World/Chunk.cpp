@@ -62,9 +62,9 @@ namespace Minecraft
 		}
 	}
 
-	std::vector<BlockFace> WorldChunk::GetVisibleFaces(const BlockPos_t& referencePosition, const ChunkNeighbours& neighbours) const
+	std::vector<BlockRenderableFace> WorldChunk::GetVisibleFaces(const BlockPos_t& referencePosition, const ChunkNeighbours& neighbours) const
 	{
-		std::vector<BlockFace> result;
+		std::vector<BlockRenderableFace> result;
 		for (dimension_t y = 0; y < CHUNK_HEIGHT; y++)
 		{
 			for (dimension_t z = 0; z < CHUNK_SIZE; z++)
@@ -84,7 +84,7 @@ namespace Minecraft
 						const BlockData& data = BlockDatabase::GetBlock(block);
 						if (nx == BlockId::Air)
 						{
-							BlockFace face;
+							BlockRenderableFace face;
 							face.Normal = { -1, 0, 0 };
 							face.Texture = data.Textures.nx;
 							face.TopLeft = referencePosition + BlockPos_t{ x, y + 1, z };
@@ -95,7 +95,7 @@ namespace Minecraft
 						}
 						if (px == BlockId::Air)
 						{
-							BlockFace face;
+							BlockRenderableFace face;
 							face.Normal = { 1, 0, 0 };
 							face.Texture = data.Textures.px;
 							face.TopLeft = referencePosition + BlockPos_t{ x + 1, y + 1, z + 1 };
@@ -106,7 +106,7 @@ namespace Minecraft
 						}
 						if (ny == BlockId::Air)
 						{
-							BlockFace face;
+							BlockRenderableFace face;
 							face.Normal = { 0, -1, 0 };
 							face.Texture = data.Textures.ny;
 							face.TopLeft = referencePosition + BlockPos_t{ x, y, z + 1 };
@@ -117,7 +117,7 @@ namespace Minecraft
 						}
 						if (py == BlockId::Air)
 						{
-							BlockFace face;
+							BlockRenderableFace face;
 							face.Normal = { 0, 1, 0 };
 							face.Texture = data.Textures.py;
 							face.TopLeft = referencePosition + BlockPos_t{ x, y + 1, z };
@@ -128,7 +128,7 @@ namespace Minecraft
 						}
 						if (nz == BlockId::Air)
 						{
-							BlockFace face;
+							BlockRenderableFace face;
 							face.Normal = { 0, 0, -1 };
 							face.Texture = data.Textures.nz;
 							face.TopLeft = referencePosition + BlockPos_t{ x + 1, y + 1, z };
@@ -139,7 +139,7 @@ namespace Minecraft
 						}
 						if (pz == BlockId::Air)
 						{
-							BlockFace face;
+							BlockRenderableFace face;
 							face.Normal = { 0, 0, 1 };
 							face.Texture = data.Textures.pz;
 							face.TopLeft = referencePosition + BlockPos_t{ x, y + 1, z + 1 };

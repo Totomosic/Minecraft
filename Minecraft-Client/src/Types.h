@@ -8,6 +8,11 @@ namespace Minecraft
 	using BlockPos_t = Bolt::Vector3<dimension_t>;
 	using ChunkPos_t = Bolt::Vector2i;
 
+	inline float Sign(float v)
+	{
+		return (v < 0) ? -1.0f : (v == 0) ? 0 : 1.0f;
+	}
+
 }
 
 namespace std

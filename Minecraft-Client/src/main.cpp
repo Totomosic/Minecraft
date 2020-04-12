@@ -8,6 +8,9 @@
 #include "Systems/MovementSystem.h"
 #include "Systems/CMovement.h"
 #include "Systems/CDimensions.h"
+#include "Systems/CameraSystem.h"
+
+#include "World/Raycaster.h"
 
 namespace Minecraft
 {
@@ -16,10 +19,11 @@ namespace Minecraft
 	{
 	public:
 		static constexpr int RENDER_DISTANCE = 1;
-		static constexpr float PLAYER_SPEED = 5;
+		static constexpr float PLAYER_SPEED = 5.0f;
+		static constexpr float REACH = 4.5f;
 
 	public:
-		Vector2f m_MouseSensitivity = { 0.8f, 0.8f };
+		Vector2f m_MouseSensitivity = { 0.2f, 0.2f };
 		EntityHandle m_Camera;
 		EntityHandle m_Player;
 		Vector3f m_PlayerSize = { 0.75f, 1.8f, 0.75f };
@@ -27,12 +31,14 @@ namespace Minecraft
 		World m_World;
 		WorldRenderer* m_WorldRenderer;
 		ChunkPos_t m_LastChunk;
+		RaycastHit m_SelectedBlock;
 
 		UIText* m_PositionText;
 
 	public:
 		void Init() override
 		{
+			GetWindow().DisableVSync();
 			GetWindow().SetClearColor(Color::CornflowerBlue);
 			Scene& scene = SceneManager::Get().AddScene();
 			Layer& mainLayer = scene.AddLayer();
@@ -48,12 +54,14 @@ namespace Minecraft
 			m_Player.GetComponent<Mesh>()->Models[0].Transform = Matrix4f::Translation({ 0, m_PlayerSize.y / 2.0f, 0 }) * m_Player.GetComponent<Mesh>()->Models[0].Transform;
 			m_Camera.GetTransform()->SetParent(m_Player.GetTransform().Get());
 			m_Camera.GetTransform()->SetLocalPosition({ 0, m_PlayerSize.y - 0.2f, 0 });
+			m_Camera.Assign<CCameraController>(CCameraController{ m_MouseSensitivity });
 			m_Player.Assign<CDimensions>(CDimensions{ m_PlayerSize });
 			m_Player.Assign<CMovement>();
 
 			m_World = World(std::make_unique<SimplexNoiseGenerator>(55, 70));
 			m_WorldRenderer = new WorldRenderer(&m_World, &mainLayer);
 			mainLayer.Systems().Add<MovementSystem>(&m_World);
+			scene.Systems().Add<CameraSystem>();
 
 			m_PositionText = &uiLayer.GetUI().GetRoot().CreateText("", ResourceManager::Get().Fonts().Arial(20), Color::Black, Transform({ 5, 720 - 5, 0 }), AlignH::Left, AlignV::Top);
 			UIRectangle& crosshairX = uiLayer.GetUI().GetRoot().CreateRectangle(20, 2, Color::White, Transform({ 1280 / 2, 720 / 2, 0 }));
@@ -65,6 +73,10 @@ namespace Minecraft
 					ResourceExtractor resources(pack);
 					ResourcePtr<Texture2D> blockFacesTexture = resources.GetResourcePtr<Texture2D>("BlockFaces");
 					TextureAtlas blockFaces(blockFacesTexture, 16, 16);
+
+					BlockData air;
+					air.Id = BlockId::Air;
+					BlockDatabase::Register(air);
 
 					BlockData dirt;
 					dirt.Id = BlockId::Dirt;
@@ -107,6 +119,9 @@ namespace Minecraft
 			ComponentHandle t = m_Camera.GetTransform();
 			ComponentHandle movement = m_Player.GetComponent<CMovement>();
 
+			Raycaster caster(&m_World);
+			m_SelectedBlock = caster.Cast(Ray(t->Position(), t->Forward()), REACH);
+
 			m_PositionText->SetText("x: " + std::to_string(t->Position().x) + " y: " + std::to_string(t->Position().y) + " z: " + std::to_string(t->Position().z));
 
 			Vector3f forward = t->Forward();
@@ -118,6 +133,21 @@ namespace Minecraft
 
 			movement->Velocity.xz() = Vector2f{ 0, 0 };
 			movement->Acceleration = { 0, -30, 0 };
+
+			if (Input::Get().MouseButtonPressed(MouseButton::Left))
+			{				
+				if (m_SelectedBlock.Hit)
+				{
+					m_World.SetBlock(m_SelectedBlock.BlockPosition, BlockId::Air);
+				}
+			}
+			else if (Input::Get().MouseButtonPressed(MouseButton::Right))
+			{
+				if (m_SelectedBlock.Hit)
+				{
+					m_World.SetBlock(m_SelectedBlock.BlockPosition + m_SelectedBlock.Normal, m_SelectedBlock.BlockId);
+				}
+			}
 
 			bool set = false;
 			if (Input::Get().KeyDown(Keycode::W))
@@ -145,15 +175,10 @@ namespace Minecraft
 				movement->Velocity.xz() = movement->Velocity.xz().Normalize() * PLAYER_SPEED;
 			}
 
-			if (Input::Get().KeyPressed(Keycode::Space) && abs(movement->Velocity.y) < 1e-6)
+			if (Input::Get().KeyDown(Keycode::Space) && abs(movement->Velocity.y) < 1e-6)
 			{
 				movement->Velocity.y = 10;
 			}
-
-			Vector3f relMouse = Input::Get().RelMousePosition();
-			t->Rotate(-relMouse.x * m_MouseSensitivity.x * Time::Get().RenderingTimeline().DeltaTime(), Vector3f::Up(), Space::World);
-			t->Rotate(relMouse.y * m_MouseSensitivity.y * Time::Get().RenderingTimeline().DeltaTime(), Vector3f::Right(), Space::Local);
-
 			// Load chunks
 			ChunkPos_t chunk = m_World.GetChunkFromBlock((BlockPos_t)t->Position());
 			if (chunk != m_LastChunk)

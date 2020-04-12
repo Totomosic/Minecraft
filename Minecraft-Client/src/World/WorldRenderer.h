@@ -19,7 +19,7 @@ namespace Minecraft
 		WorldRenderer(const World* targetWorld, Layer* layer);
 
 	private:
-		Task<std::pair<Mesh, ModelMapping>> CreateMeshFromFaces(std::vector<BlockFace> faces) const;
+		Task<std::pair<Mesh, ModelMapping>> CreateMeshFromFaces(std::vector<BlockRenderableFace> faces) const;
 		void UpdateChunk(const ChunkPos_t& position, const WorldChunk* chunk);
 
 	};

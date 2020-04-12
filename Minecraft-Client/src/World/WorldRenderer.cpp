@@ -12,10 +12,10 @@ namespace Minecraft
 	{
 		m_LoadedListener = EventManager::Get().Bus().AddScopedEventListener<ChunkLoaded>([this](Event<ChunkLoaded>& e)
 			{
-				if (&e.Data.Dimesion == m_TargetWorld && m_Entities.find(e.Data.Position) == m_Entities.end())
+				if (&e.Data.Dimension == m_TargetWorld && m_Entities.find(e.Data.Position) == m_Entities.end())
 				{
 					ChunkPos_t position = e.Data.Position;
-					ChunkNeighbours neighbours = e.Data.Dimesion.GetChunkNeighbours(e.Data.Position);
+					ChunkNeighbours neighbours = e.Data.Dimension.GetChunkNeighbours(e.Data.Position);
 					float x = e.Data.Position.x * WorldChunk::CHUNK_SIZE;
 					float z = e.Data.Position.y * WorldChunk::CHUNK_SIZE;
 					CreateMeshFromFaces(e.Data.Chunk.GetVisibleFaces({}, neighbours)).ContinueWithOnMainThread([this, x, z, position](std::pair<Mesh, ModelMapping> mesh)
@@ -50,11 +50,18 @@ namespace Minecraft
 			});
 		m_UpdatedListener = EventManager::Get().Bus().AddScopedEventListener<ChunkUpdated>([this](Event<ChunkUpdated>& e)
 			{
-
+				if (&e.Data.Dimension == m_TargetWorld && m_Entities.find(e.Data.Position) != m_Entities.end())
+				{
+					UpdateChunk(e.Data.Position, &e.Data.Chunk);
+					for (const auto& neighbour : e.Data.Neighbours)
+					{
+						UpdateChunk(neighbour.first, neighbour.second);
+					}
+				}
 			});
 	}
 
-	Task<std::pair<Mesh, ModelMapping>> WorldRenderer::CreateMeshFromFaces(std::vector<BlockFace> faces) const
+	Task<std::pair<Mesh, ModelMapping>> WorldRenderer::CreateMeshFromFaces(std::vector<BlockRenderableFace> faces) const
 	{
 		Mesh m;
 		m.Materials.push_back(ResourceManager::Get().Materials().Texture(BlockDatabase::GetBlockFaces()));
@@ -76,7 +83,7 @@ namespace Minecraft
 			IndexIterator indices = iMapping.Begin();
 			for (int i = 0; i < faces.size(); i++)
 			{
-				const BlockFace& face = faces.at(i);
+				const BlockRenderableFace& face = faces.at(i);
 				it.Position() = face.TopLeft;
 				it.Normal() = face.Normal;
 				it.TexCoord() = Vector2f(face.Texture.Min.x, face.Texture.Max.y);

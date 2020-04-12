@@ -77,7 +77,20 @@ namespace Minecraft
 		BlockIndex index = GetBlockIndex(position);
 		WorldChunk& chunk = LoadChunkInternal(index.Chunk);
 		chunk.SetBlock(index.Offset, block);
-		EventManager::Get().Bus().Emit(ChunkUpdated{ *this, index.Chunk, (const WorldChunk&)chunk });
+		std::vector<std::pair<ChunkPos_t, const WorldChunk*>> neighbours;
+		// Only update neighbouring chunks when removing a block
+		if (block == BlockId::Air)
+		{
+			if (index.Offset.x == 0)
+				neighbours.push_back({ { index.Chunk.x - 1, index.Chunk.y }, GetChunk({ index.Chunk.x - 1, index.Chunk.y }) });
+			if (index.Offset.x == WorldChunk::CHUNK_SIZE - 1)
+				neighbours.push_back({ { index.Chunk.x + 1, index.Chunk.y }, GetChunk({ index.Chunk.x + 1, index.Chunk.y }) });
+			if (index.Offset.z == 0)
+				neighbours.push_back({ { index.Chunk.x, index.Chunk.y - 1 }, GetChunk({ index.Chunk.x, index.Chunk.y - 1 }) });
+			if (index.Offset.z == WorldChunk::CHUNK_SIZE - 1)
+				neighbours.push_back({ { index.Chunk.x, index.Chunk.y + 1 }, GetChunk({ index.Chunk.x, index.Chunk.y + 1 }) });
+		}
+		EventManager::Get().Bus().Emit(ChunkUpdated{ *this, index.Chunk, (const WorldChunk&)chunk, neighbours });
 	}
 
 	BlockPos_t World::GetBlockFromWorld(const Vector3f& worldPosition) const
