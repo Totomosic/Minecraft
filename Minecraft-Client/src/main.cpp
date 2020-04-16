@@ -18,12 +18,12 @@ namespace Minecraft
 	class MinecraftClient : public Application
 	{
 	public:
-		static constexpr int RENDER_DISTANCE = 1;
+		static constexpr int RENDER_DISTANCE = 12;
 		static constexpr float PLAYER_SPEED = 5.0f;
 		static constexpr float REACH = 4.5f;
 
 	public:
-		Vector2f m_MouseSensitivity = { 0.2f, 0.2f };
+		Vector2f m_MouseSensitivity = { 0.002f, 0.002f };
 		EntityHandle m_Camera;
 		EntityHandle m_Player;
 		Vector3f m_PlayerSize = { 0.75f, 1.8f, 0.75f };
@@ -38,7 +38,7 @@ namespace Minecraft
 	public:
 		void Init() override
 		{
-			GetWindow().DisableVSync();
+			GetWindow().EnableVSync();
 			GetWindow().SetClearColor(Color::CornflowerBlue);
 			Scene& scene = SceneManager::Get().AddScene();
 			Layer& mainLayer = scene.AddLayer();
@@ -50,7 +50,7 @@ namespace Minecraft
 			mainLayer.SetActiveCamera(m_Camera);
 
 			EntityFactory factory = mainLayer.GetFactory();
-			m_Player = factory.Cuboid(m_PlayerSize.x, m_PlayerSize.y, m_PlayerSize.z, Color::Red, Transform({ 0, 65, 0 }));
+			m_Player = factory.Cuboid(m_PlayerSize.x, m_PlayerSize.y, m_PlayerSize.z, Color::Red, Transform({ 0, 1000, 0 }));
 			m_Player.GetComponent<Mesh>()->Models[0].Transform = Matrix4f::Translation({ 0, m_PlayerSize.y / 2.0f, 0 }) * m_Player.GetComponent<Mesh>()->Models[0].Transform;
 			m_Camera.GetTransform()->SetParent(m_Player.GetTransform().Get());
 			m_Camera.GetTransform()->SetLocalPosition({ 0, m_PlayerSize.y - 0.2f, 0 });
@@ -58,7 +58,7 @@ namespace Minecraft
 			m_Player.Assign<CDimensions>(CDimensions{ m_PlayerSize });
 			m_Player.Assign<CMovement>();
 
-			m_World = World(std::make_unique<SimplexNoiseGenerator>(55, 70));
+			m_World = World(std::make_unique<SimplexNoiseGenerator>(55, 75));
 			m_WorldRenderer = new WorldRenderer(&m_World, &mainLayer);
 			mainLayer.Systems().Add<MovementSystem>(&m_World);
 			scene.Systems().Add<CameraSystem>();
@@ -108,6 +108,26 @@ namespace Minecraft
 					stone.Textures.pz = blockFaces.GetImage(3);
 					BlockDatabase::Register(stone);
 
+					BlockData oakLog;
+					oakLog.Id = BlockId::OakLog;
+					oakLog.Textures.nx = blockFaces.GetImage(4);
+					oakLog.Textures.px = blockFaces.GetImage(4);
+					oakLog.Textures.ny = blockFaces.GetImage(5);
+					oakLog.Textures.py = blockFaces.GetImage(5);
+					oakLog.Textures.nz = blockFaces.GetImage(4);
+					oakLog.Textures.pz = blockFaces.GetImage(4);
+					BlockDatabase::Register(oakLog);
+
+					BlockData oakLeaves;
+					oakLeaves.Id = BlockId::OakLeaves;
+					oakLeaves.Textures.nx = blockFaces.GetImage(6);
+					oakLeaves.Textures.px = blockFaces.GetImage(6);
+					oakLeaves.Textures.ny = blockFaces.GetImage(6);
+					oakLeaves.Textures.py = blockFaces.GetImage(6);
+					oakLeaves.Textures.nz = blockFaces.GetImage(6);
+					oakLeaves.Textures.pz = blockFaces.GetImage(6);
+					BlockDatabase::Register(oakLeaves);
+
 					BlockDatabase::SetBlockFaces(blockFacesTexture);
 				});
 
@@ -116,6 +136,7 @@ namespace Minecraft
 
 		void Update() override
 		{
+			m_WorldRenderer->Update();
 			ComponentHandle t = m_Camera.GetTransform();
 			ComponentHandle movement = m_Player.GetComponent<CMovement>();
 
@@ -180,23 +201,26 @@ namespace Minecraft
 				movement->Velocity.y = 10;
 			}
 			// Load chunks
-			ChunkPos_t chunk = m_World.GetChunkFromBlock((BlockPos_t)t->Position());
-			if (chunk != m_LastChunk)
+			if (BlockDatabase::GetBlockFaces() != nullptr)
 			{
-				std::vector<ChunkPos_t> shouldBeLoaded;
-				shouldBeLoaded.reserve((1 + 2 * (size_t)RENDER_DISTANCE) * (1 + 2 * (size_t)RENDER_DISTANCE));
-				for (int i = -RENDER_DISTANCE; i <= RENDER_DISTANCE; i++)
-					for (int j = -RENDER_DISTANCE; j <= RENDER_DISTANCE; j++)
-						shouldBeLoaded.push_back({ chunk.x + i, chunk.y + j });
+				ChunkPos_t chunk = m_World.GetChunkFromBlock((BlockPos_t)t->Position());
+				if (chunk != m_LastChunk)
+				{
+					std::vector<ChunkPos_t> shouldBeLoaded;
+					shouldBeLoaded.reserve((1 + 2 * (size_t)RENDER_DISTANCE) * (1 + 2 * (size_t)RENDER_DISTANCE));
+					for (int i = -RENDER_DISTANCE; i <= RENDER_DISTANCE; i++)
+						for (int j = -RENDER_DISTANCE; j <= RENDER_DISTANCE; j++)
+							shouldBeLoaded.push_back({ chunk.x + i, chunk.y + j });
 
-				for (ChunkPos_t c : m_World.GetLoadedChunks())
-					if (std::find(shouldBeLoaded.begin(), shouldBeLoaded.end(), c) == shouldBeLoaded.end())
-						m_World.UnloadChunk(c);
+					for (ChunkPos_t c : m_World.GetLoadedChunks())
+						if (std::find(shouldBeLoaded.begin(), shouldBeLoaded.end(), c) == shouldBeLoaded.end())
+							m_World.UnloadChunk(c);
 
-				for (ChunkPos_t c : shouldBeLoaded)
-					m_World.LoadChunk(c);
+					for (ChunkPos_t c : shouldBeLoaded)
+						m_World.LoadChunk(c);
 
-				m_LastChunk = chunk;
+					m_LastChunk = chunk;
+				}
 			}
 		}
 

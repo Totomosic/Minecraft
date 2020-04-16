@@ -8,7 +8,7 @@ namespace Minecraft
 {
 
 	WorldRenderer::WorldRenderer(const World* targetWorld, Layer* layer)
-		: m_TargetWorld(targetWorld), m_Layer(layer), m_LoadedListener(), m_UnloadedListener(), m_UpdatedListener()
+		: m_TargetWorld(targetWorld), m_Layer(layer), m_LoadedListener(), m_UnloadedListener(), m_UpdatedListener(), m_MeshQueue(), m_MeshesPerFrame(2), m_TimeSinceLastMesh(1.0f / m_MeshesPerFrame)
 	{
 		m_LoadedListener = EventManager::Get().Bus().AddScopedEventListener<ChunkLoaded>([this](Event<ChunkLoaded>& e)
 			{
@@ -18,15 +18,21 @@ namespace Minecraft
 					ChunkNeighbours neighbours = e.Data.Dimension.GetChunkNeighbours(e.Data.Position);
 					float x = e.Data.Position.x * WorldChunk::CHUNK_SIZE;
 					float z = e.Data.Position.y * WorldChunk::CHUNK_SIZE;
-					CreateMeshFromFaces(e.Data.Chunk.GetVisibleFaces({}, neighbours)).ContinueWithOnMainThread([this, x, z, position](std::pair<Mesh, ModelMapping> mesh)
+					std::vector<BlockRenderableFace> faces = e.Data.Chunk.GetVisibleFaces({}, neighbours);
+					Mesh mesh = CreateChunkMesh(faces);
+					const VertexBuffer* vb = &mesh.Models[0].Model->Data().Vertices->GetVertexBuffer(0);
+					const IndexBuffer* ib = mesh.Models[0].Model->Data().Indices->GetIndexBuffer(0).get();
+					CreateMeshFromFaces(faces, vb, ib).ContinueWithOnMainThread([this, x, z, position, mesh{ std::move(mesh) }]() mutable
 						{
-							{
-								ModelMapping temp{ std::move(mesh.second) };
-							}
 							if (m_Entities.find(position) != m_Entities.end() && !m_Entities[position])
 							{
-								EntityHandle entity = m_Layer->GetFactory().CreateMesh(std::move(mesh.first), Transform({ x, 0, z }));
+								EntityHandle entity = m_Layer->GetFactory().CreateTransform(Transform({ x, 0, z }));
+								LoadMesh(entity, std::move(mesh));
 								m_Entities[position] = entity;
+							}
+							else
+							{
+								CleanupMesh(mesh);
 							}
 						});
 					m_Entities[position];
@@ -61,26 +67,29 @@ namespace Minecraft
 			});
 	}
 
-	Task<std::pair<Mesh, ModelMapping>> WorldRenderer::CreateMeshFromFaces(std::vector<BlockRenderableFace> faces) const
+	void WorldRenderer::Update()
 	{
-		Mesh m;
-		m.Materials.push_back(ResourceManager::Get().Materials().Texture(BlockDatabase::GetBlockFaces()));
-		ModelData data;
-		data.Indices = std::make_unique<IndexArray>();
-		data.Vertices = std::make_unique<VertexArray>();
-		data.Indices->AddIndexBuffer(std::make_unique<IndexBuffer>(faces.size() * 6));
-		BufferLayout layout = BufferLayout::Default();
-		data.Vertices->CreateVertexBuffer(4 * faces.size() * layout.Size(), layout);
-
-		ModelMapping mapping = data.Map();
-			
-		return TaskManager::Get().Run(make_shared_function([mesh{ std::move(m) }, mapping{ std::move(mapping) }, faces{ std::move(faces) }, data{ std::move(data) }]() mutable
+		float timePerMesh = 1.0f / m_MeshesPerFrame;
+		m_TimeSinceLastMesh = std::min(m_TimeSinceLastMesh + 1, std::max(timePerMesh, m_MeshesPerFrame));
+		while (!m_MeshQueue.empty() && m_TimeSinceLastMesh >= timePerMesh)
 		{
-			const VertexMapping& vMapping = mapping.VertexMap;
-			const IndexMapping& iMapping = mapping.IndexMap;
+			PendingMesh& pair = m_MeshQueue.front();
+			CleanupMesh(pair.mesh);
+			pair.entity.Assign<Mesh>(std::move(pair.mesh));
+			m_MeshQueue.pop();
+			m_TimeSinceLastMesh -= timePerMesh;
+		}
+	}
+
+	Task<void> WorldRenderer::CreateMeshFromFaces(std::vector<BlockRenderableFace> faces, const VertexBuffer* buffer, const IndexBuffer* indexBuffer) const
+	{		
+		void* vertexPtr = buffer->Map(Access::Write);
+		void* indexPtr = indexBuffer->Map(Access::Write);
+		return TaskManager::Get().Run(make_shared_function([faces{ std::move(faces) }, buffer, indexBuffer, vertexPtr, indexPtr]() mutable
+		{
 			Vector4<byte> color = Color::White.ToBytes();
-			VertexIterator it = vMapping.Begin();
-			IndexIterator indices = iMapping.Begin();
+			DefaultVertexIterator it(vertexPtr, &buffer->Layout());
+			IndexIterator<uint32_t> indices((uint32_t*)indexPtr);
 			for (int i = 0; i < faces.size(); i++)
 			{
 				const BlockRenderableFace& face = faces.at(i);
@@ -117,8 +126,6 @@ namespace Minecraft
 				*indices = (uint32_t)i * 4 + 3;
 				indices++;
 			}
-			mesh.Models.push_back({ ResourcePtr<Model>(new Model(std::move(data)), true), Matrix4f::Identity(), { 0 } });
-			return std::pair<Mesh, ModelMapping>{ mesh, std::move(mapping) };
 		}));
 	}
 
@@ -128,22 +135,48 @@ namespace Minecraft
 		{
 			if (m_Entities.find(position) != m_Entities.end())
 			{
-				CreateMeshFromFaces(chunk->GetVisibleFaces({}, m_TargetWorld->GetChunkNeighbours(position))).ContinueWithOnMainThread([this, position](std::pair<Mesh, ModelMapping> mesh)
+				std::vector<BlockRenderableFace> faces = chunk->GetVisibleFaces({}, m_TargetWorld->GetChunkNeighbours(position));
+				Mesh mesh = CreateChunkMesh(faces);
+				CreateMeshFromFaces(faces, &mesh.Models[0].Model->Data().Vertices->GetVertexBuffer(0), mesh.Models[0].Model->Data().Indices->GetIndexBuffer(0).get()).ContinueWithOnMainThread([this, position, mesh{ std::move(mesh) }]() mutable
 					{
-						{
-							ModelMapping temp{ std::move(mesh.second) };
-						}
 						if (m_Entities.find(position) != m_Entities.end())
 						{
 							EntityHandle entity = m_Entities[position];
 							if (entity)
 							{
-								entity.Assign<Mesh>(std::move(mesh.first));
+								LoadMesh(entity, std::move(mesh));
+								return;
 							}
 						}
+						CleanupMesh(mesh);
 					});
 			}
 		}
+	}
+
+	Mesh WorldRenderer::CreateChunkMesh(const std::vector<BlockRenderableFace>& faces) const
+	{
+		ModelData modelData;
+		modelData.Vertices = std::make_unique<VertexArray>();
+		modelData.Indices = std::make_unique<IndexArray>();
+		BufferLayout layout = BufferLayout::Default();
+		modelData.Vertices->CreateVertexBuffer(faces.size() * 4 * layout.Size(), layout, BufferUsage::StaticDraw);
+		modelData.Indices->AddIndexBuffer(std::make_unique<IndexBuffer>(faces.size() * 6, BufferUsage::StaticDraw));
+		Mesh mesh;
+		mesh.Materials.push_back(ResourceManager::Get().Materials().Texture(BlockDatabase::GetBlockFaces()));
+		mesh.Models.push_back({ ResourcePtr<Model>(new Model(std::move(modelData), false), true), Matrix4f::Identity(), { 0 } });
+		return mesh;
+	}
+
+	void WorldRenderer::LoadMesh(const EntityHandle& entity, Mesh&& mesh)
+	{
+		m_MeshQueue.push({ std::move(mesh), entity });
+	}
+
+	void WorldRenderer::CleanupMesh(const Mesh& mesh)
+	{
+		mesh.Models[0].Model->Data().Vertices->GetVertexBuffer(0).Unmap();
+		mesh.Models[0].Model->Data().Indices->GetIndexBuffer(0)->Unmap();
 	}
 
 }

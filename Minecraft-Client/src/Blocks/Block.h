@@ -47,7 +47,9 @@ namespace Minecraft
 		Stone,
 		Cobblestone,
 		Sand,
-		Gravel
+		Gravel,
+		OakLog,
+		OakLeaves
 	};
 
 	struct BlockRenderableFace

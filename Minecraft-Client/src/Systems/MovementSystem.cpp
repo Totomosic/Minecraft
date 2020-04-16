@@ -27,16 +27,18 @@ namespace Minecraft
 					Vector3f move = movement->Velocity * dt.Seconds();
 					Vector3f nextPos = transform->Position() + move;
 
-					int blockHeight = (int)std::ceil(size.y * 2.0f);
+					float entityHeight = size.y * 2.0f;
+					int blockHeight = (int)std::ceil(entityHeight);
+					float checkStep = entityHeight / blockHeight;
 
-					// Collide XZ direction with bottom block of entity
-					for (int height = 0; height < blockHeight && (movement->Velocity.x != 0 && movement->Velocity.z != 0); height++)
+					// Collide XZ direction with entity
+					for (int height = 0; height <= blockHeight && (movement->Velocity.x != 0 || movement->Velocity.z != 0); height++)
 					{
 						BlockPos_t current = m_World->GetBlockFromWorld(transform->Position());
-						BlockPos_t xBlock0 = m_World->GetBlockFromWorld(transform->Position() + Vector3f{ move.x + size.x * Sign(move.x), (float)height, size.z });
-						BlockPos_t xBlock1 = m_World->GetBlockFromWorld(transform->Position() + Vector3f{ move.x + size.x * Sign(move.x), (float)height, -size.z });
-						BlockPos_t zBlock0 = m_World->GetBlockFromWorld(transform->Position() + Vector3f{ size.x, (float)height, move.z + size.z * Sign(move.z) });
-						BlockPos_t zBlock1 = m_World->GetBlockFromWorld(transform->Position() + Vector3f{ -size.x, (float)height, move.z + size.z * Sign(move.z) });
+						BlockPos_t xBlock0 = m_World->GetBlockFromWorld(transform->Position() + Vector3f{ move.x + size.x * Sign(move.x), (float)height * checkStep, size.z });
+						BlockPos_t xBlock1 = m_World->GetBlockFromWorld(transform->Position() + Vector3f{ move.x + size.x * Sign(move.x), (float)height * checkStep, -size.z });
+						BlockPos_t zBlock0 = m_World->GetBlockFromWorld(transform->Position() + Vector3f{ size.x, (float)height * checkStep, move.z + size.z * Sign(move.z) });
+						BlockPos_t zBlock1 = m_World->GetBlockFromWorld(transform->Position() + Vector3f{ -size.x, (float)height * checkStep, move.z + size.z * Sign(move.z) });
 						if (m_World->GetBlock(xBlock0) != BlockId::Air || m_World->GetBlock(xBlock1) != BlockId::Air)
 							movement->Velocity.x = 0;
 						if (m_World->GetBlock(zBlock0) != BlockId::Air || m_World->GetBlock(zBlock1) != BlockId::Air)
@@ -57,6 +59,7 @@ namespace Minecraft
 					}
 					else
 					{
+						// Collide Y direction with top of entity
 						BlockPos_t nextBL = m_World->GetBlockFromWorld(nextPos + Vector3f{ -size.x, size.y * 2.0f, -size.z });
 						BlockPos_t nextBR = m_World->GetBlockFromWorld(nextPos + Vector3f{ size.x, size.y * 2.0f, -size.z });
 						BlockPos_t nextTL = m_World->GetBlockFromWorld(nextPos + Vector3f{ -size.x, size.y * 2.0f, size.z });

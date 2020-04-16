@@ -18,7 +18,6 @@ namespace Minecraft
 		Vector3f delta = m_CurrentPos - m_PrevPos;
 		if (delta.LengthSqrd() >= 0.01f)
 		{
-			delta *= dt.Seconds();
 			for (EntityHandle entity : entities.GetEntitiesWith<CCameraController, Transform>())
 			{
 				ComponentHandle transform = entity.GetTransform();
