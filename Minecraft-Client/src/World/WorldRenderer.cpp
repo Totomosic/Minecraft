@@ -8,7 +8,7 @@ namespace Minecraft
 {
 
 	WorldRenderer::WorldRenderer(const World* targetWorld, Layer* layer)
-		: m_TargetWorld(targetWorld), m_Layer(layer), m_LoadedListener(), m_UnloadedListener(), m_UpdatedListener(), m_MeshQueue(), m_MeshesPerFrame(2), m_TimeSinceLastMesh(1.0f / m_MeshesPerFrame)
+		: m_TargetWorld(targetWorld), m_Layer(layer), m_LoadedListener(), m_UnloadedListener(), m_UpdatedListener(), m_ModelQueue(), m_ModelsPerFrame(2), m_TimeSinceLastModel(1.0f / m_ModelsPerFrame)
 	{
 		m_LoadedListener = EventManager::Get().Bus().AddScopedEventListener<ChunkLoaded>([this](Event<ChunkLoaded>& e)
 			{
@@ -19,20 +19,20 @@ namespace Minecraft
 					float x = e.Data.Position.x * WorldChunk::CHUNK_SIZE;
 					float z = e.Data.Position.y * WorldChunk::CHUNK_SIZE;
 					std::vector<BlockRenderableFace> faces = e.Data.Chunk.GetVisibleFaces({}, neighbours);
-					Mesh mesh = CreateChunkMesh(faces);
-					const VertexBuffer* vb = &mesh.Models[0].Model->Data().Vertices->GetVertexBuffer(0);
-					const IndexBuffer* ib = mesh.Models[0].Model->Data().Indices->GetIndexBuffer(0).get();
-					CreateMeshFromFaces(faces, vb, ib).ContinueWithOnMainThread([this, x, z, position, mesh{ std::move(mesh) }]() mutable
+					Model model = CreateChunkModel(faces);
+					const VertexBuffer* vb = &model.Meshes[0].Mesh->Data().Vertices->GetVertexBuffer(0);
+					const IndexBuffer* ib = model.Meshes[0].Mesh->Data().Indices->GetIndexBuffer(0).get();
+					CreateMeshFromFaces(faces, vb, ib).ContinueWithOnMainThread([this, x, z, position, model{ std::move(model) }]() mutable
 						{
 							if (m_Entities.find(position) != m_Entities.end() && !m_Entities[position])
 							{
 								EntityHandle entity = m_Layer->GetFactory().CreateTransform(Transform({ x, 0, z }));
-								LoadMesh(entity, std::move(mesh));
+								LoadModel(entity, std::move(model));
 								m_Entities[position] = entity;
 							}
 							else
 							{
-								CleanupMesh(mesh);
+								CleanupModel(model);
 							}
 						});
 					m_Entities[position];
@@ -69,15 +69,15 @@ namespace Minecraft
 
 	void WorldRenderer::Update()
 	{
-		float timePerMesh = 1.0f / m_MeshesPerFrame;
-		m_TimeSinceLastMesh = std::min(m_TimeSinceLastMesh + 1, std::max(timePerMesh, m_MeshesPerFrame));
-		while (!m_MeshQueue.empty() && m_TimeSinceLastMesh >= timePerMesh)
+		float timePerMesh = 1.0f / m_ModelsPerFrame;
+		m_TimeSinceLastModel = std::min(m_TimeSinceLastModel + 1, std::max(timePerMesh, m_ModelsPerFrame));
+		while (!m_ModelQueue.empty() && m_TimeSinceLastModel >= timePerMesh)
 		{
-			PendingMesh& pair = m_MeshQueue.front();
-			CleanupMesh(pair.mesh);
-			pair.entity.Assign<Mesh>(std::move(pair.mesh));
-			m_MeshQueue.pop();
-			m_TimeSinceLastMesh -= timePerMesh;
+			PendingModel& pair = m_ModelQueue.front();
+			CleanupModel(pair.model);
+			pair.entity.Assign<Model>(std::move(pair.model));
+			m_ModelQueue.pop();
+			m_TimeSinceLastModel -= timePerMesh;
 		}
 	}
 
@@ -136,47 +136,47 @@ namespace Minecraft
 			if (m_Entities.find(position) != m_Entities.end())
 			{
 				std::vector<BlockRenderableFace> faces = chunk->GetVisibleFaces({}, m_TargetWorld->GetChunkNeighbours(position));
-				Mesh mesh = CreateChunkMesh(faces);
-				CreateMeshFromFaces(faces, &mesh.Models[0].Model->Data().Vertices->GetVertexBuffer(0), mesh.Models[0].Model->Data().Indices->GetIndexBuffer(0).get()).ContinueWithOnMainThread([this, position, mesh{ std::move(mesh) }]() mutable
+				Model model = CreateChunkModel(faces);
+				CreateMeshFromFaces(faces, &model.Meshes[0].Mesh->Data().Vertices->GetVertexBuffer(0), model.Meshes[0].Mesh->Data().Indices->GetIndexBuffer(0).get()).ContinueWithOnMainThread([this, position, model{ std::move(model) }]() mutable
 					{
 						if (m_Entities.find(position) != m_Entities.end())
 						{
 							EntityHandle entity = m_Entities[position];
 							if (entity)
 							{
-								LoadMesh(entity, std::move(mesh));
+								LoadModel(entity, std::move(model));
 								return;
 							}
 						}
-						CleanupMesh(mesh);
+						CleanupModel(model);
 					});
 			}
 		}
 	}
 
-	Mesh WorldRenderer::CreateChunkMesh(const std::vector<BlockRenderableFace>& faces) const
+	Model WorldRenderer::CreateChunkModel(const std::vector<BlockRenderableFace>& faces) const
 	{
-		ModelData modelData;
-		modelData.Vertices = std::make_unique<VertexArray>();
-		modelData.Indices = std::make_unique<IndexArray>();
+		MeshData meshData;
+		meshData.Vertices = std::make_unique<VertexArray>();
+		meshData.Indices = std::make_unique<IndexArray>();
 		BufferLayout layout = BufferLayout::Default();
-		modelData.Vertices->CreateVertexBuffer(faces.size() * 4 * layout.Size(), layout, BufferUsage::StaticDraw);
-		modelData.Indices->AddIndexBuffer(std::make_unique<IndexBuffer>(faces.size() * 6, BufferUsage::StaticDraw));
-		Mesh mesh;
-		mesh.Materials.push_back(ResourceManager::Get().Materials().Texture(BlockDatabase::GetBlockFaces()));
-		mesh.Models.push_back({ ResourcePtr<Model>(new Model(std::move(modelData), false), true), Matrix4f::Identity(), { 0 } });
-		return mesh;
+		meshData.Vertices->CreateVertexBuffer(faces.size() * 4 * layout.Size(), layout, BufferUsage::StaticDraw);
+		meshData.Indices->AddIndexBuffer(std::make_unique<IndexBuffer>(faces.size() * 6, BufferUsage::StaticDraw));
+		Model model;
+		model.Materials.push_back(AssetManager::Get().Materials().Texture(BlockDatabase::GetBlockFaces()));
+		model.Meshes.push_back({ AssetHandle<Mesh>(new Mesh(std::move(meshData), false), true), Matrix4f::Identity(), { 0 } });
+		return model;
 	}
 
-	void WorldRenderer::LoadMesh(const EntityHandle& entity, Mesh&& mesh)
+	void WorldRenderer::LoadModel(const EntityHandle& entity, Model&& model)
 	{
-		m_MeshQueue.push({ std::move(mesh), entity });
+		m_ModelQueue.push({ std::move(model), entity });
 	}
 
-	void WorldRenderer::CleanupMesh(const Mesh& mesh)
+	void WorldRenderer::CleanupModel(const Model& model)
 	{
-		mesh.Models[0].Model->Data().Vertices->GetVertexBuffer(0).Unmap();
-		mesh.Models[0].Model->Data().Indices->GetIndexBuffer(0)->Unmap();
+		model.Meshes[0].Mesh->Data().Vertices->GetVertexBuffer(0).Unmap();
+		model.Meshes[0].Mesh->Data().Indices->GetIndexBuffer(0)->Unmap();
 	}
 
 }

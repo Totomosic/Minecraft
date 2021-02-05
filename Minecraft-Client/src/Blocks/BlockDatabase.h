@@ -27,13 +27,13 @@ namespace Minecraft
 	{
 	private:
 		static std::unordered_map<BlockId, BlockData> s_Blocks;
-		static ResourcePtr<Texture2D> s_BlockFaces;
+		static AssetHandle<Texture2D> s_BlockFaces;
 
 	public:
-		static const ResourcePtr<Texture2D>& GetBlockFaces();
+		static const AssetHandle<Texture2D>& GetBlockFaces();
 		static const BlockData& GetBlock(BlockId id);
 		static void Register(const BlockData& data);
-		static void SetBlockFaces(const ResourcePtr<Texture2D>& faces);
+		static void SetBlockFaces(const AssetHandle<Texture2D>& faces);
 	};
 
 }

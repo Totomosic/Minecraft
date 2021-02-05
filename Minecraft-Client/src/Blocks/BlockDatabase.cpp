@@ -5,9 +5,9 @@ namespace Minecraft
 {
 
 	std::unordered_map<BlockId, BlockData> BlockDatabase::s_Blocks;
-	ResourcePtr<Texture2D> BlockDatabase::s_BlockFaces;
+	AssetHandle<Texture2D> BlockDatabase::s_BlockFaces;
 
-	const ResourcePtr<Texture2D>& BlockDatabase::GetBlockFaces()
+	const AssetHandle<Texture2D>& BlockDatabase::GetBlockFaces()
 	{
 		return s_BlockFaces;
 	}
@@ -22,7 +22,7 @@ namespace Minecraft
 		s_Blocks[data.Id] = data;
 	}
 
-	void BlockDatabase::SetBlockFaces(const ResourcePtr<Texture2D>& faces)
+	void BlockDatabase::SetBlockFaces(const AssetHandle<Texture2D>& faces)
 	{
 		s_BlockFaces = faces;
 	}

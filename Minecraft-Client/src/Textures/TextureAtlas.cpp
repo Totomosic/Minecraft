@@ -9,7 +9,7 @@ namespace Minecraft
 
 	}
 
-	TextureAtlas::TextureAtlas(const ResourcePtr<Texture2D>& texture, int individualWidth, int individualHeight)
+	TextureAtlas::TextureAtlas(const AssetHandle<Texture2D>& texture, int individualWidth, int individualHeight)
 		: m_Texture(texture), m_IndividualWidth(individualWidth), m_IndividualHeight(individualHeight)
 	{
 
@@ -25,7 +25,7 @@ namespace Minecraft
 		return m_IndividualHeight;
 	}
 
-	const ResourcePtr<Texture2D>& TextureAtlas::GetTexture() const
+	const AssetHandle<Texture2D>& TextureAtlas::GetTexture() const
 	{
 		return m_Texture;
 	}

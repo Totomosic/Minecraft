@@ -18,7 +18,7 @@ namespace Minecraft
 	class MinecraftClient : public Application
 	{
 	public:
-		static constexpr int RENDER_DISTANCE = 12;
+		static constexpr int RENDER_DISTANCE = 1;
 		static constexpr float PLAYER_SPEED = 5.0f;
 		static constexpr float REACH = 4.5f;
 
@@ -51,7 +51,7 @@ namespace Minecraft
 
 			EntityFactory factory = mainLayer.GetFactory();
 			m_Player = factory.Cuboid(m_PlayerSize.x, m_PlayerSize.y, m_PlayerSize.z, Color::Red, Transform({ 0, 1000, 0 }));
-			m_Player.GetComponent<Mesh>()->Models[0].Transform = Matrix4f::Translation({ 0, m_PlayerSize.y / 2.0f, 0 }) * m_Player.GetComponent<Mesh>()->Models[0].Transform;
+			m_Player.GetComponent<Model>()->Meshes[0].Transform = Matrix4f::Translation({ 0, m_PlayerSize.y / 2.0f, 0 }) * m_Player.GetComponent<Model>()->Meshes[0].Transform;
 			m_Camera.GetTransform()->SetParent(m_Player.GetTransform().Get());
 			m_Camera.GetTransform()->SetLocalPosition({ 0, m_PlayerSize.y - 0.2f, 0 });
 			m_Camera.Assign<CCameraController>(CCameraController{ m_MouseSensitivity });
@@ -63,15 +63,15 @@ namespace Minecraft
 			mainLayer.Systems().Add<MovementSystem>(&m_World);
 			scene.Systems().Add<CameraSystem>();
 
-			m_PositionText = &uiLayer.GetUI().GetRoot().CreateText("", ResourceManager::Get().Fonts().Arial(20), Color::Black, Transform({ 5, 720 - 5, 0 }), AlignH::Left, AlignV::Top);
+			m_PositionText = &uiLayer.GetUI().GetRoot().CreateText("", AssetManager::Get().Fonts().Arial(20), Color::Black, Transform({ 5, 720 - 5, 0 }), AlignH::Left, AlignV::Top);
 			UIRectangle& crosshairX = uiLayer.GetUI().GetRoot().CreateRectangle(20, 2, Color::White, Transform({ 1280 / 2, 720 / 2, 0 }));
 			UIRectangle& crosshairZ = uiLayer.GetUI().GetRoot().CreateRectangle(2, 20, Color::White, Transform({ 1280 / 2, 720 / 2, 0 }));
 
 			m_LastChunk = { INT_MAX, INT_MAX };
-			ResourceManager::Get().LoadPack("res/resources.pack", [this](const ResourcePack& pack)
+			AssetManager::Get().LoadPack("res/resources.pack", [this](const ResourcePack& pack)
 				{
 					ResourceExtractor resources(pack);
-					ResourcePtr<Texture2D> blockFacesTexture = resources.GetResourcePtr<Texture2D>("BlockFaces");
+					AssetHandle<Texture2D> blockFacesTexture = resources.GetAssetHandle<Texture2D>("BlockFaces");
 					TextureAtlas blockFaces(blockFacesTexture, 16, 16);
 
 					BlockData air;
@@ -129,6 +129,8 @@ namespace Minecraft
 					BlockDatabase::Register(oakLeaves);
 
 					BlockDatabase::SetBlockFaces(blockFacesTexture);
+
+					ComponentHandle<Transform> t = m_Camera.GetTransform();
 				});
 
 			Input::Get().HideCursor();
